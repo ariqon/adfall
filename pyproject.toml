@@ -1,0 +1,12 @@
+[project]
+name = "adfall-mcp"
+version = "0.1.0"
+description = "Read-only MCP server for a local Arbetsdomstolen SQLite database."
+requires-python = ">=3.11"
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "uvicorn>=0.34.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

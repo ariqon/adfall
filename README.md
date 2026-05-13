@@ -32,6 +32,106 @@ Kopplingstabell mellan lag (`sfs`) och förarbete (`doc_id`).
 
 ## Körning
 
+### MCP-server
+
+Projektet innehåller en read-only MCP-server i `mcp_server.py` som exponerar databasen som tools och resources.
+
+Installera beroenden:
+
+```bash
+uv sync
+```
+
+Kör servern lokalt via stdio:
+
+```bash
+uv run python mcp_server.py
+```
+
+Om databasen ligger någon annanstans:
+
+```bash
+ADFALL_DB_PATH=/path/to/arbetsdomstolen.db uv run python mcp_server.py
+```
+
+Exempel på klientkonfiguration:
+
+```json
+{
+  "mcpServers": {
+    "adfall": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/Users/jsundlo/Projects/adfall",
+        "run",
+        "python",
+        "mcp_server.py"
+      ]
+    }
+  }
+}
+```
+
+Exponerade tools:
+
+- `database_stats`
+- `search_ad_cases`
+- `get_ad_case`
+- `find_cases_by_law`
+- `search_law_text`
+- `get_law`
+- `get_forarbeten_for_law`
+- `search_forarbeten`
+
+Exponerade resources:
+
+- `adfall://case/{malnummer}`
+- `adfall://law/{sfs}`
+- `adfall://forarbete/{doc_id}`
+
+### Railway-deploy
+
+Servern kan även köras live med Streamable HTTP på `/mcp`.
+
+```bash
+railway init
+railway up
+railway domain
+```
+
+Railway använder `Dockerfile` och `railway.toml`. Health check ligger på `/health`.
+Den okomprimerade databasen `arbetsdomstolen.db` är git-ignorerad, men Railway-bygget använder `arbetsdomstolen.db.xz` och packar upp den till `/app/arbetsdomstolen.db` i Docker-bygget.
+
+Om databasen byggs om lokalt:
+
+```bash
+uv run python optimize_database.py
+sqlite3 arbetsdomstolen.db "VACUUM;"
+xz -kf -9 arbetsdomstolen.db
+railway up
+```
+
+Remote MCP-URL:
+
+```text
+https://DIN-RAILWAY-DOMAIN/mcp
+```
+
+Som standard är endpointen publik. För privat endpoint, sätt `ADFALL_API_KEY` i Railway:
+
+```bash
+railway variable set ADFALL_API_KEY="$(openssl rand -hex 32)"
+```
+
+Skicka då nyckeln från klienten som:
+
+```text
+Authorization: Bearer <ADFALL_API_KEY>
+```
+
+Utan `ADFALL_API_KEY` startar servern ändå, men `/mcp` blir publik.
+
 ### 1) Import AD 1993-2010 från lagen.nu
 ```bash
 python3 import_lagennu_1993_2010.py
