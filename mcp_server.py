@@ -27,13 +27,14 @@ except ImportError:  # pragma: no cover - exercised only when dependency is miss
 try:
     from starlette.applications import Starlette
     from starlette.requests import Request
-    from starlette.responses import JSONResponse
+    from starlette.responses import JSONResponse, PlainTextResponse
     from starlette.routing import Route
     from starlette.types import ASGIApp, Receive, Scope, Send
 except ImportError:  # pragma: no cover - provided by the MCP runtime dependency
     Starlette = None  # type: ignore[assignment]
     Request = None  # type: ignore[assignment]
     JSONResponse = None  # type: ignore[assignment]
+    PlainTextResponse = None  # type: ignore[assignment]
     Route = None  # type: ignore[assignment]
     ASGIApp = Any  # type: ignore[misc,assignment]
     Receive = Any  # type: ignore[misc,assignment]
@@ -47,6 +48,21 @@ SERVER_NAME = "adfall"
 MAX_LIMIT = 50
 DEFAULT_TEXT_CHARS = 6000
 DEFAULT_HTTP_PATH = "/mcp"
+ANSWER_INSTRUCTIONS = """\
+Använd Adfall som en juridisk källdatabas, inte som ett färdigt juridiskt
+ställningstagande. När AD-domar används som stöd i ett svar ska kopplingen
+mellan domen och användarens faktiska omständigheter göras tydlig.
+Avsluta svaret med en kompakt Markdown-tabell med rubriken
+"Domar som bär slutsatsen" och dessa kolumner:
+
+| Dom | Relevans i caset | Princip |
+
+Ta bara med domar som faktiskt bär slutsatsen. I "Relevans i caset" ska du
+kort ange hur domen mappar mot användarens fakta. I "Princip" ska du formulera
+den rättsliga principen i en kärnfull mening. Om ingen AD-dom faktiskt bär
+slutsatsen ska du säga det uttryckligen i stället för att lägga in en
+dekorativ tabell.
+"""
 
 
 def _env_int(name: str, default: int) -> int:
@@ -71,6 +87,7 @@ def _csv_env(name: str, default: list[str]) -> list[str]:
 mcp = (
     FastMCP(
         SERVER_NAME,
+        instructions=ANSWER_INSTRUCTIONS,
         host=os.environ.get("HOST", "127.0.0.1"),
         port=_env_int("PORT", 8000),
         streamable_http_path=_mcp_path(),
@@ -107,6 +124,10 @@ def _register_resource(uri: str):
         return mcp.resource(uri)(func) if mcp else func
 
     return decorator
+
+
+def _register_prompt(func):
+    return mcp.prompt()(func) if mcp else func
 
 
 def _db_path() -> Path:
@@ -160,6 +181,47 @@ class ApiKeyMiddleware:
         await self.app(scope, receive, send)
 
 
+class PublicEndpointNoiseMiddleware:
+    """Friendly responses for browser/crawler traffic on the public endpoint."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method")
+        path = scope.get("path")
+
+        if method == "GET" and path == "/robots.txt":
+            response = PlainTextResponse("User-agent: *\nDisallow: /\n")
+            await response(scope, receive, send)
+            return
+
+        if method == "GET" and path == _mcp_path():
+            headers = {
+                key.decode("latin1").lower(): value.decode("latin1")
+                for key, value in scope.get("headers", [])
+            }
+            accept = headers.get("accept", "").lower()
+            if "text/event-stream" not in accept:
+                response = JSONResponse(
+                    {
+                        "ok": True,
+                        "server": SERVER_NAME,
+                        "transport": "streamable-http",
+                        "endpoint": _mcp_path(),
+                        "message": "Use an MCP client or POST JSON-RPC requests to this endpoint.",
+                    }
+                )
+                await response(scope, receive, send)
+                return
+
+        await self.app(scope, receive, send)
+
+
 async def health(_request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "server": SERVER_NAME})
 
@@ -170,7 +232,7 @@ def create_app() -> Starlette:
 
     app = mcp.streamable_http_app()
     app.add_route("/health", health, methods=["GET"])
-    return ApiKeyMiddleware(app)
+    return ApiKeyMiddleware(PublicEndpointNoiseMiddleware(app))
 
 
 app = create_app() if mcp and Starlette else None
@@ -250,6 +312,24 @@ def _snippet(text: str | None, query: str | None, chars: int = 600) -> str | Non
     return _clip(clean, chars)
 
 
+def _case_answer_table(row: dict[str, Any]) -> dict[str, str | None]:
+    return {
+        "dom": row["malnummer"],
+        "relevans_i_caset": (
+            "Formulera utifrån användarens faktiska omständigheter; ange kort "
+            "varför domen bär eller inte bär slutsatsen."
+        ),
+        "princip_underlag": _clip(
+            row.get("rattsfragor")
+            or row.get("sammanfattning")
+            or row.get("domslut")
+            or row.get("lagrum")
+            or row.get("titel"),
+            900,
+        ),
+    }
+
+
 def _case_summary(row: dict[str, Any], query: str | None = None) -> dict[str, Any]:
     return {
         "malnummer": row["malnummer"],
@@ -270,6 +350,7 @@ def _case_summary(row: dict[str, Any], query: str | None = None) -> dict[str, An
             or row.get("titel"),
             query,
         ),
+        "answer_table": _case_answer_table(row),
     }
 
 
@@ -419,6 +500,7 @@ def get_ad_case(
     result["refererad"] = bool(row.get("refererad"))
     result["anonymiserad"] = bool(row.get("anonymiserad"))
     result["has_fulltext"] = bool(row.get("fulltext"))
+    result["answer_table"] = _case_answer_table(row)
     if include_fulltext:
         result["fulltext"] = _clip(row.get("fulltext"), fulltext_chars)
     return result
@@ -631,6 +713,20 @@ def search_forarbeten(
     ]
 
 
+@_register_prompt
+def adfall_answer_guidance() -> str:
+    """Svarskonvention for juridiska svar som bygger pa AD-domar."""
+
+    return ANSWER_INSTRUCTIONS
+
+
+@_register_resource("adfall://answer-guidance")
+def answer_guidance_resource() -> str:
+    """Answer-format guidance for clients using AD cases."""
+
+    return ANSWER_INSTRUCTIONS
+
+
 @_register_resource("adfall://case/{malnummer}")
 def case_resource(malnummer: str) -> dict[str, Any]:
     """Resource view of one AD case."""
@@ -668,7 +764,11 @@ def main() -> None:
 
     transport = os.environ.get("ADFALL_TRANSPORT", "stdio")
     if transport == "streamable-http":
+        import logging
         import uvicorn
+
+        mcp_log_level = os.environ.get("ADFALL_MCP_LOG_LEVEL", "WARNING").upper()
+        logging.getLogger("mcp").setLevel(getattr(logging, mcp_log_level, logging.WARNING))
 
         if not _api_key():
             print(

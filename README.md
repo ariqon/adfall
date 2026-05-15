@@ -92,9 +92,28 @@ Exponerade tools:
 
 Exponerade resources:
 
+- `adfall://answer-guidance`
 - `adfall://case/{malnummer}`
 - `adfall://law/{sfs}`
 - `adfall://forarbete/{doc_id}`
+
+Exponerade prompts:
+
+- `adfall_answer_guidance`
+
+### Svarskonvention för AD-domar
+
+MCP-servern skickar med server-instruktioner om att juridiska svar som bygger på
+AD-domar ska avslutas med en kort tabell:
+
+```markdown
+| Dom | Relevans i caset | Princip |
+```
+
+Samma instruktion finns som prompten `adfall_answer_guidance` och resursen
+`adfall://answer-guidance`. Domverktygen skickar dessutom med ett
+`answer_table`-fält per dom med `dom`, `relevans_i_caset` och
+`princip_underlag`, så klientens modell får formatet nära källmaterialet.
 
 ### Railway-deploy
 
@@ -137,6 +156,9 @@ Authorization: Bearer <ADFALL_API_KEY>
 ```
 
 Utan `ADFALL_API_KEY` startar servern ändå, men `/mcp` blir publik.
+
+För lugnare Railway-loggar dämpas MCP-bibliotekets interna info-loggar till `WARNING`
+som standard. Sätt `ADFALL_MCP_LOG_LEVEL=INFO` om du vill se dem igen vid felsökning.
 
 ### 1) Import AD 1993-2010 från lagen.nu
 ```bash
