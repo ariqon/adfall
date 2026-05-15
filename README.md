@@ -6,9 +6,15 @@ Datainsamling av Arbetsdomstolens domar till SQLite, med komplettering från `la
 
 - Databas: `arbetsdomstolen.db`
 - Domtabell: `domar`
-- PDF:er: `pdfs/`
+- PDF:er: `pdfs/` (lokalt arbetsmaterial, inte spårat i Git)
 - Import/underhållsskript:
 `add_2011_2019.py`, `add_2020_2024.py`, `populate_db.py`, `fetch_all_details.py`, `extract_pdf_text.py`, `fix_old_urls.py`, `update_summaries.py`, `import_lagennu_1993_2010.py`, `check_lagennu_diff.py`, `import_laws_forarbeten.py`, `backfill_forarbeten_from_riksdagen.py`
+
+## Vad behöver ligga på GitHub?
+
+Det som behövs för Railway-deploy är källkoden för MCP-servern, Python-låsfilerna, Docker/Railway-konfigurationen och den komprimerade databasen `arbetsdomstolen.db.xz`.
+
+`pdfs/` används av import- och underhållsskripten när databasen byggs eller kompletteras lokalt. Själva servern läser bara SQLite-databasen, och Railway-bygget packar upp `arbetsdomstolen.db.xz` till `arbetsdomstolen.db`. Därför är PDF:erna git-ignorerade och hålls utanför GitHub framåt.
 
 ## Datakällor
 
