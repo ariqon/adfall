@@ -3,11 +3,17 @@
 .env.local
 node_modules/
 __pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .DS_Store
 pdfs/
 *.pyc
 .venv/
 venv/
+dist/
+build/
+*.egg-info/
 *.log
 *.key
 *.pem
@@ -17,3 +23,6 @@ secrets.json
 .anthropic/
 .aws/
 arbetsdomstolen.db
+arbetsdomstolen.db-*
+*.sqlite
+*.sqlite3

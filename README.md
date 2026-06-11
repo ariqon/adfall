@@ -1,46 +1,18 @@
 # adfall
 
-Datainsamling av Arbetsdomstolens domar till SQLite, med komplettering från `lagen.nu` och `riksdagen.se`.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](pyproject.toml)
+[![MCP](https://img.shields.io/badge/MCP-server-111827.svg)](mcp_server.py)
 
-## Innehåll
+Adfall är en read-only MCP-server och SQLite-databas för svenska
+Arbetsdomstolen-domar, kompletterad med utvalda lagtexter och förarbeten från
+`lagen.nu` och `riksdagen.se`.
 
-- Databas: `arbetsdomstolen.db`
-- Domtabell: `domar`
-- PDF:er: `pdfs/` (lokalt arbetsmaterial, inte spårat i Git)
-- Import/underhållsskript:
-`add_2011_2019.py`, `add_2020_2024.py`, `populate_db.py`, `fetch_all_details.py`, `extract_pdf_text.py`, `fix_old_urls.py`, `update_summaries.py`, `import_lagennu_1993_2010.py`, `check_lagennu_diff.py`, `import_laws_forarbeten.py`, `backfill_forarbeten_from_riksdagen.py`
+Projektet är tänkt som en källdatabas för research, sökning och AI-assisterad
+analys. Det är inte juridisk rådgivning och ersätter inte egen rättslig
+bedömning.
 
-## Vad behöver ligga på GitHub?
-
-Det som behövs för Railway-deploy är källkoden för MCP-servern, Python-låsfilerna, Docker/Railway-konfigurationen och den komprimerade databasen `arbetsdomstolen.db.xz`.
-
-`pdfs/` används av import- och underhållsskripten när databasen byggs eller kompletteras lokalt. Själva servern läser bara SQLite-databasen, och Railway-bygget packar upp `arbetsdomstolen.db.xz` till `arbetsdomstolen.db`. Därför är PDF:erna git-ignorerade och hålls utanför GitHub framåt.
-
-## Datakällor
-
-- [arbetsdomstolen.se](https://arbetsdomstolen.se/)
-- [lagen.nu](https://lagen.nu/)
-- [riksdagen.se](https://www.riksdagen.se/sv/dokument-och-lagar)
-
-## Tabeller
-
-### `domar`
-Innehåller AD-domar (målnummer, datum, titel, URL, sammanfattning, lagrum, rättsfrågor, domslut, PDF/fulltext, källmärkning).
-
-### `laws`
-Utvalda lagar (SFS), lagtitel, URL och fulltext.
-
-### `forarbeten`
-Förarbetsdokument (doc_id, typ, titel, URL, fulltext, källa).
-
-### `law_forarbeten`
-Kopplingstabell mellan lag (`sfs`) och förarbete (`doc_id`).
-
-## Körning
-
-### MCP-server
-
-Projektet innehåller en read-only MCP-server i `mcp_server.py` som exponerar databasen som tools och resources.
+## Snabbstart
 
 Installera beroenden:
 
@@ -48,19 +20,19 @@ Installera beroenden:
 uv sync
 ```
 
-Kör servern lokalt via stdio:
+Kör MCP-servern lokalt via stdio:
 
 ```bash
 uv run python mcp_server.py
 ```
 
-Om databasen ligger någon annanstans:
+Använd en annan databasfil:
 
 ```bash
 ADFALL_DB_PATH=/path/to/arbetsdomstolen.db uv run python mcp_server.py
 ```
 
-Exempel på klientkonfiguration:
+Exempel på MCP-klientkonfiguration:
 
 ```json
 {
@@ -79,7 +51,33 @@ Exempel på klientkonfiguration:
 }
 ```
 
-Exponerade tools:
+## Vad ingår?
+
+| Del | Beskrivning |
+| --- | --- |
+| `mcp_server.py` | Read-only MCP-server med tools, resources och prompt. |
+| `arbetsdomstolen.db.xz` | Komprimerad SQLite-databas som används vid deploy. |
+| `arbetsdomstolen.db` | Lokal okomprimerad databas, git-ignorerad. |
+| `pdfs/` | Lokalt arbetsmaterial för import och textutvinning, git-ignorerat. |
+| Importskript | Skript för att bygga, komplettera och kontrollera datan. |
+| `Dockerfile`, `railway.toml` | Deploykonfiguration för Railway. |
+
+## Datainnehåll
+
+Nuvarande lokala databas innehåller:
+
+| Tabell | Innehåll | Antal |
+| --- | --- | ---: |
+| `domar` | AD-domar med metadata, sammanfattning, lagrum, rättsfrågor, domslut och fulltext där den finns | 2 594 |
+| `laws` | Utvalda lagtexter kopplade till dommaterialet | 7 |
+| `forarbeten` | Förarbetsdokument från lagen.nu och riksdagen.se | 150 |
+| `law_forarbeten` | Kopplingar mellan lagar och förarbeten | - |
+
+Domdatabasen täcker år 1993-2025.
+
+## MCP-yta
+
+### Tools
 
 - `database_stats`
 - `search_ad_cases`
@@ -90,34 +88,34 @@ Exponerade tools:
 - `get_forarbeten_for_law`
 - `search_forarbeten`
 
-Exponerade resources:
+### Resources
 
 - `adfall://answer-guidance`
 - `adfall://case/{malnummer}`
 - `adfall://law/{sfs}`
 - `adfall://forarbete/{doc_id}`
 
-Exponerade prompts:
+### Prompts
 
 - `adfall_answer_guidance`
 
-### Svarskonvention för AD-domar
-
-MCP-servern skickar med server-instruktioner om att juridiska svar som bygger på
-AD-domar ska avslutas med en kort tabell:
+Servern skickar med svarsinstruktioner för juridiska svar som bygger på
+AD-domar. När domar används som stöd ska svaret koppla domen till användarens
+faktiska omständigheter och avslutas med:
 
 ```markdown
+## Domar som bär slutsatsen
+
 | Dom | Relevans i caset | Princip |
 ```
 
-Samma instruktion finns som prompten `adfall_answer_guidance` och resursen
-`adfall://answer-guidance`. Domverktygen skickar dessutom med ett
-`answer_table`-fält per dom med `dom`, `relevans_i_caset` och
-`princip_underlag`, så klientens modell får formatet nära källmaterialet.
+Domverktygen returnerar även ett `answer_table`-fält per dom med `dom`,
+`relevans_i_caset` och `princip_underlag`, så klientens modell får stöd nära
+källmaterialet.
 
-### Railway-deploy
+## Railway-deploy
 
-Servern kan även köras live med Streamable HTTP på `/mcp`.
+Servern kan köras live med Streamable HTTP på `/mcp`.
 
 ```bash
 railway init
@@ -125,17 +123,11 @@ railway up
 railway domain
 ```
 
-Railway använder `Dockerfile` och `railway.toml`. Health check ligger på `/health`.
-Den okomprimerade databasen `arbetsdomstolen.db` är git-ignorerad, men Railway-bygget använder `arbetsdomstolen.db.xz` och packar upp den till `/app/arbetsdomstolen.db` i Docker-bygget.
+Railway använder `Dockerfile` och `railway.toml`. Health check ligger på
+`/health`.
 
-Om databasen byggs om lokalt:
-
-```bash
-uv run python optimize_database.py
-sqlite3 arbetsdomstolen.db "VACUUM;"
-xz -kf -9 arbetsdomstolen.db
-railway up
-```
+Deployen behöver inte `pdfs/` eller den okomprimerade databasen. Docker-bygget
+packar upp `arbetsdomstolen.db.xz` till `/app/arbetsdomstolen.db`.
 
 Remote MCP-URL:
 
@@ -143,56 +135,85 @@ Remote MCP-URL:
 https://DIN-RAILWAY-DOMAIN/mcp
 ```
 
-Som standard är endpointen publik. För privat endpoint, sätt `ADFALL_API_KEY` i Railway:
+Som standard startar servern även utan API-nyckel, vilket gör `/mcp` publik. För
+privat endpoint, sätt `ADFALL_API_KEY` i Railway:
 
 ```bash
 railway variable set ADFALL_API_KEY="$(openssl rand -hex 32)"
 ```
 
-Skicka då nyckeln från klienten som:
+Skicka sedan nyckeln från klienten:
 
 ```text
 Authorization: Bearer <ADFALL_API_KEY>
 ```
 
-Utan `ADFALL_API_KEY` startar servern ändå, men `/mcp` blir publik.
+För lugnare Railway-loggar dämpas MCP-bibliotekets interna info-loggar till
+`WARNING` som standard. Sätt `ADFALL_MCP_LOG_LEVEL=INFO` vid felsökning.
 
-För lugnare Railway-loggar dämpas MCP-bibliotekets interna info-loggar till `WARNING`
-som standard. Sätt `ADFALL_MCP_LOG_LEVEL=INFO` om du vill se dem igen vid felsökning.
+## Underhåll
 
-### 1) Import AD 1993-2010 från lagen.nu
+Bygg om och komprimera databasen:
+
+```bash
+uv run python optimize_database.py
+sqlite3 arbetsdomstolen.db "VACUUM;"
+xz -kf -9 arbetsdomstolen.db
+```
+
+Importera äldre AD-domar från lagen.nu:
+
 ```bash
 python3 import_lagennu_1993_2010.py
 ```
 
-### 2) Diff-kontroll mot lagen.nu
+Kontrollera diff mot lagen.nu:
+
 ```bash
 ./check_lagennu_diff.py --start 1993 --end 2023
-```
-
-Med detaljer:
-```bash
 ./check_lagennu_diff.py --show-lists
 ```
 
-### 3) Import lagar + förarbeten för utvalt lagrum
+Importera lagar och förarbeten:
+
 ```bash
 python3 import_laws_forarbeten.py
-```
-
-### 4) Backfill av saknade förarbeten från riksdagen.se
-```bash
 python3 backfill_forarbeten_from_riksdagen.py
 ```
 
-## Nuvarande status (kort)
+Övriga import- och kompletteringsskript:
 
-- `domar`: 2594 poster
-- AD 1993-2023: 0 saknade mot lagen.nu, 20 extra lokalt (2023 nr 58-77)
-- Lagar inlästa: 7 unika SFS
-- Relevanta förarbeten till dessa lagar: 150 (128 från lagen.nu + 22 från riksdagen.se)
+- `add_2011_2019.py`
+- `add_2020_2024.py`
+- `populate_db.py`
+- `fetch_all_details.py`
+- `extract_pdf_text.py`
+- `fix_old_urls.py`
+- `update_summaries.py`
+
+## GitHub och artefakter
+
+Repo:t spårar källkod, konfiguration, låsfil, licens och den komprimerade
+databasen `arbetsdomstolen.db.xz`.
+
+Följande är lokala eller genererade artefakter och ska inte commitas:
+
+- `arbetsdomstolen.db`
+- `pdfs/`
+- Python-cache och virtuella miljöer
+- miljöfiler och hemligheter
+
+## Datakällor
+
+- [Arbetsdomstolen](https://arbetsdomstolen.se/)
+- [lagen.nu](https://lagen.nu/)
+- [riksdagen.se](https://www.riksdagen.se/sv/dokument-och-lagar)
 
 ## Kända avvikelser
 
 - `AD 2013 nr 1` saknar PDF-länk på källsidan.
 - `AD 2019 nr 53` har PDF men fulltext kunde inte extraheras automatiskt.
+
+## Licens
+
+Open source under [MIT License](LICENSE).
